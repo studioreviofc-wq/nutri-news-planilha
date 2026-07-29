@@ -1733,27 +1733,46 @@ const MOSTRAR_AVISO_INTERNO = true;
   onScroll();
   window.addEventListener("scroll", onScroll, { passive: true });
 
-  /* ---- reveal ---- */
-  var items = document.querySelectorAll(".rv");
-  if (!("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    items.forEach(function (el) { el.classList.add("in"); });
-  } else {
-    var io = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          entry.target.classList.add("in");
-          io.unobserve(entry.target);
-        }
-      });
-    }, { rootMargin: "0px 0px -6% 0px", threshold: 0 });
-    items.forEach(function (el) { io.observe(el); });
+  /* ---- reveal ----
+     Dirigido por scroll, sem IntersectionObserver e sem requestAnimationFrame:
+     a página não pode depender de nenhuma API opcional para ficar legível.
+     Se o script falhar antes daqui, a classe .js nem é aplicada e todo o
+     conteúdo já nasce visível. */
+  var pending = [].slice.call(document.querySelectorAll(".rv"));
 
-    /* rede de segurança: nada pode ficar invisível se o observer não disparar */
-    setTimeout(function () {
-      document.querySelectorAll(".rv:not(.in)").forEach(function (el) {
-        if (el.getBoundingClientRect().top < window.innerHeight) el.classList.add("in");
-      });
-    }, 1200);
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    pending.forEach(function (el) { el.classList.add("in"); });
+  } else {
+    var lastRun = 0;
+
+    var revealVisible = function () {
+      lastRun = Date.now();
+      var h = window.innerHeight || document.documentElement.clientHeight;
+      var still = [];
+      for (var i = 0; i < pending.length; i++) {
+        var el = pending[i];
+        var b = el.getBoundingClientRect();
+        if (b.top < h * 0.94 && b.bottom > 0) el.classList.add("in");
+        else still.push(el);
+      }
+      pending = still;
+      if (!pending.length) {
+        window.removeEventListener("scroll", onMove);
+        window.removeEventListener("resize", onMove);
+      }
+    };
+
+    var onMove = function () {
+      if (Date.now() - lastRun < 80) return;   /* throttle simples */
+      revealVisible();
+    };
+
+    window.addEventListener("scroll", onMove, { passive: true });
+    window.addEventListener("resize", onMove);
+
+    revealVisible();                        /* primeira dobra, imediato */
+    setTimeout(revealVisible, 400);         /* depois das fontes assentarem */
+    window.addEventListener("load", revealVisible);
   }
 
   /* ---- FAQ: acordeão, apenas uma aberta por vez ---- */
